@@ -1,0 +1,21 @@
+---
+title: "zalshaye_1"
+output:
+  pdf_document: default
+  html_document: default
+  word_document: default
+---
+
+```{r setup, include=TRUE}
+
+data <- read.csv("C:\\Users\\Z\\Desktop\\addresses.csv")
+summary(data)
+library(Hmisc)
+describe(data)
+library(tidyverse)
+view(data)
+data <- data.frame(Age = c(31, 45, 67, 22, 43, 57))
+data1 <- transform(data, Age = Age + 2)
+view(data1)
+plot(data$Age)
+```
