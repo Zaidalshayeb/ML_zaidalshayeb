@@ -1,0 +1,192 @@
+---
+title: "Assignment 2"
+author: "Zalshaye"
+date: "10/2/2021"
+output:
+  html_document: default
+  word_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+```{r bank}
+library(readr)
+library(caret)
+library(FNN)
+library(gmodels)
+library(dplyr)
+bank <- read_csv('C:/Users/Z/Desktop/UniversalBank.csv')
+
+
+bank$education_1 <- ifelse(bank$Education == 1, 1, 0)
+bank$education_2 <- ifelse(bank$Education == 2, 1, 0)
+bank$education_3 <- ifelse(bank$Education == 3, 1, 0)
+bank$acceptance <- ifelse(bank$`Personal Loan` == 1, 1, 0)
+bank.1 <- bank %>%
+  select(Age, Experience, Income, Family, CCAvg, Mortgage, `Securities Account`, `CD Account`, Online, CreditCard, education_1, education_2, education_3, acceptance) # Select a subset of variables
+
+
+set.seed(1234)
+train_index1 = createDataPartition(bank.1$acceptance, p = 0.6, list = FALSE)
+train_data1 = bank.1[train_index1,] # create the training data; we include all columns; note the index is row,                                       column
+validation_data1 = bank.1[-train_index1,] # create the test set
+summary(train_data1$acceptance)
+summary(validation_data1$acceptance)
+
+
+train1.norm.df <- train_data1
+valid1.norm.df <- validation_data1
+traval1.norm.df <- bank.1
+
+norm.values <- preProcess(train_data1[, 1:6], method=c("center", "scale"))
+train1.norm.df[, 1:6] <- predict(norm.values, train_data1[, 1:6]) # Replace first two columns with normalized                                                                        values
+valid1.norm.df[, 1:6] <- predict(norm.values, validation_data1[, 1:6])
+traval1.norm.df[, 1:6] <- predict(norm.values, traval1.norm.df[, 1:6])
+summary(train1.norm.df)
+var(train1.norm.df[, 1:6])
+summary(valid1.norm.df)
+var(valid1.norm.df[, 1:6])
+
+
+set.seed(1234)
+model1 <- train(as.factor(acceptance) ~ Age + Experience + Income + Family + CCAvg + education_1 + education_2 
+                + education_3 + Mortgage + `Securities Account` + `CD Account` + Online + CreditCard,
+                data = train1.norm.df, method = "knn")
+model1
+```
+
+```{r predict}
+## Test the model onto a new data frame with a given customer
+customer.df = data.frame(Age = as.integer(40), Experience = as.integer(10), Income = as.integer(84),
+                         Family = as.integer(2), CCAvg = as.integer(2), Mortgage = as.integer(0),
+                         `Securities Account` = as.integer(0), `CD Account` = as.integer(0),
+                         Online = as.integer(1), CreditCard = as.integer(1), education_1 = as.integer(0),
+                         education_2 = as.integer(1), education_3 = as.integer(0))
+
+customer.df[, 1:6] <- predict(norm.values, customer.df[, 1:6])
+
+model1.1 <- knn(train = train1.norm.df[, 1:13, drop = FALSE], test = customer.df[, 1:13, drop = FALSE],
+                cl = train1.norm.df$acceptance,
+                k = 1) # Instructions say to use k = 1
+
+model1.1
+```
+
+According to the model, the consumer would be in the 0 level, which is the not accepted loan
+
+```{r best k}
+## Look for which k is best balancing of overfitting and underfitting
+accuracy.df <- data.frame(k = seq(1, 14, 1), accuracy = rep(0, 14))
+
+for(i in 1:14) { # Want to loop through
+  knn.1 <- knn(train = train1.norm.df[, 1:13, drop = FALSE], test = valid1.norm.df[, 1:13, drop = FALSE],
+               cl = as.factor(train1.norm.df$acceptance), k = i)
+  accuracy.df[i, 2] <- confusionMatrix(knn.1, as.factor(valid1.norm.df$acceptance))$overall[1] # Get the 
+                                                                                  # confusion matrix as well
+}
+accuracy.df
+```
+
+We find the best choice to be k = 3, which we will apply to the test set because that has the highest accuracy
+
+```{r confusion}
+## Get the confusion matrix for when k = 3
+knn.3 <- knn(train = train1.norm.df[, 1:13, drop = FALSE], test = valid1.norm.df[, 1:13, drop = FALSE],
+             cl = as.factor(train1.norm.df$acceptance), k = 3, prob=TRUE)
+confusionMatrix(knn.3, as.factor(valid1.norm.df$acceptance))
+```
+
+The confusion matrix shows that the model is 96.0% accurate.  This means that we predict correctly if the person accepts the personal loan 96% of the time.  The model is 99.56% sensative, meaning we find a true acceptance of the loan 99.56% of the time.  The precision was only 64.18%, meaning only 64.18% of what we predicted of who would accept the loan actually accepted the loan.
+
+```{r test}
+# Test the model onto a new data frame with a given customer
+customer.df1 = data.frame(Age = as.integer(40), Experience = as.integer(10), Income = as.integer(84),
+                         Family = as.integer(2), CCAvg = as.integer(2), Mortgage = as.integer(0),
+                         `Securities Account` = as.integer(0), `CD Account` = as.integer(0),
+                         Online = as.integer(1), CreditCard = as.integer(1), education_1 = as.integer(0),
+                         education_2 = as.integer(1), education_3 = as.integer(0))
+
+customer.df1[, 1:6] <- predict(norm.values, customer.df1[, 1:6])
+
+model1.2 <- knn(train = train1.norm.df[, 1:13, drop = FALSE], test = customer.df1[, 1:13, drop = FALSE],
+                cl = as.factor(train1.norm.df$acceptance),
+                k = 3, prob = TRUE) # 3 is what we found to be the best k
+
+model1.2
+
+```
+
+We find that the customer is still in level 0: the loan will not be accepted
+
+```{r split}
+## We now want to do 50% for training, 30% for validation and 20% for testing
+## Resplit the data
+m_bank <- bank %>%
+  select(Age, Experience, Income, Family, CCAvg, Mortgage, `Securities Account`, `CD Account`, Online, CreditCard, education_1, education_2, education_3, acceptance) # Select a subset of variables
+
+set.seed(1234)
+test_index2 = createDataPartition(m_bank$acceptance, p = 0.2, list = FALSE) # 20% reserved for Test
+test_data2 = m_bank[test_index2,]
+traval_data2 = m_bank[-test_index2,] # Validation and Training data is rest
+train_index2 = createDataPartition(traval_data2$acceptance, p = 0.50, list=FALSE) # 50% of remaining data as training
+train_data2 = traval_data2[train_index2,]
+validation_data2 = traval_data2[-train_index2,] # rest as validation
+
+summary(train_data2)
+summary(validation_data2)
+summary(test_data2)
+
+## Now that the data is split, normalize the data
+## Copy the original data
+
+train.norm.df2 <- train_data2
+valid.norm.df2 <- validation_data2
+traval.norm.df2 <- traval_data2
+test.norm.df2 <- test_data2
+
+## Use preProcess() from the caret package to normalize Sales and Age.
+norm.values <- preProcess(train_data2[, 1:6], method=c("center", "scale"))
+train.norm.df2[, 1:6] <- predict(norm.values, train_data2[, 1:6]) # Replace first two columns with normalized 
+                                                                    #values
+valid.norm.df2[, 1:6] <- predict(norm.values, validation_data2[, 1:6])
+traval.norm.df2[, 1:6] <- predict(norm.values, traval.norm.df2[, 1:6])
+test.norm.df2[, 1:6] <- predict(norm.values, test_data2[, 1:6])
+summary(train.norm.df2)
+var(train.norm.df2[, 1:6])
+summary(valid.norm.df2)
+var(valid.norm.df2[, 1:6])
+
+## Now combine the training and validation
+## Before we predict for the test set, we should combine the Training and Validation set, normalize the data,
+## and then do the prediction. 
+norm.values <- preProcess(traval_data2[, 1:6], method=c("center", "scale")) # Use combined set to normalize
+traval.norm.df2[, 1:6] <- predict(norm.values, traval_data2[, 1:6])
+test.norm.df2[, 1:6] <- predict(norm.values, test_data2[, 1:6])
+summary(traval.norm.df2)
+summary(test.norm.df2)
+
+## Predict and Get the confusion matrix
+knn.train2 <- knn(train = train.norm.df2[, 1:13],test = train.norm.df2[, 1:13],
+                  cl = train.norm.df2$acceptance, k = 3) # k = 3 is what we found to be best
+
+knn.val2 <- knn(train = train.norm.df2[, 1:13],test = valid.norm.df2[,1:13], 
+               cl = train.norm.df2$acceptance, k = 3) # k = 3 is what we found to be best
+
+knn.test2 <- knn(train = train.norm.df2[,1:13],test = test.norm.df2[, 1:13],
+                cl = train.norm.df2$acceptance, k = 3) # k = 3 is what we found to be best
+
+
+confusionMatrix(knn.train2, as.factor(train.norm.df2$acceptance))
+confusionMatrix(knn.val2, as.factor(valid.norm.df2$acceptance))
+confusionMatrix(knn.test2, as.factor(test.norm.df2$acceptance))
+```
+
+The model is 96.2% accurate with a sensativity of 99.78%, we find a true acceptance of the loan 99.78% of the time.  We get a precision of 59.55%, or 59.55% of the time we preidct somebody will get a personal loan they do.
+
+
+The accuracy, sensativity and specificty of the model are the highest on the training data when compared to the validation and testing data.  This makes sense given that the model is being trained on data that it sees in the training model and tested on data that it does not in the testing model.  By being able to see the underlying data, we would expect the model to perform better than when it does out of sample.
